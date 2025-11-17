@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MessHygiene Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+    </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+
+    <div id="app" class="max-w-6xl mx-auto">
+
+        <header class="text-center mb-10 p-6 bg-white shadow-lg rounded-xl">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-blue-800">MessHygiene Dashboard</h1>
+            <p class="text-gray-600 mt-2 text-lg">Real-time Environmental and Water Quality Monitoring</p>
+        </header>
+
+        <div id="overall-status" class="bg-gray-800 text-white p-6 sm:p-8 rounded-xl shadow-2xl mb-10 flex flex-col sm:flex-row justify-between items-center transition-all duration-500">
+            <div class="text-center sm:text-left mb-4 sm:mb-0">
+                <p class="text-sm font-semibold opacity-75 uppercase">Overall System Status</p>
+                <h2 id="status-message" class="text-4xl sm:text-5xl font-bold mt-1">Excellent Hygiene</h2>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div id="status-icon" class="w-12 h-12 rounded-full flex items-center justify-center text-3xl bg-white text-green-700">✔</div>
+                <div>
+                    <p class="text-sm font-semibold opacity-75 uppercase">Hygiene Index</p>
+                    <p id="ohi-score" class="text-3xl font-extrabold">100%</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+
+            <div id="temp-card" class="metric-card bg-white p-6 rounded-xl shadow-lg border-b-4 border-blue-500 hover:shadow-xl transition duration-300">
+                <h3 class="text-xl font-semibold text-gray-700">Air Temperature</h3>
+                <p id="temp-value" class="text-4xl font-bold mt-3 text-gray-900">22.5°C</p>
+                <p id="temp-status" class="text-sm mt-2 font-medium text-green-600">Optimal</p>
+            </div>
+
+            <div id="humidity-card" class="metric-card bg-white p-6 rounded-xl shadow-lg border-b-4 border-purple-500 hover:shadow-xl transition duration-300">
+                <h3 class="text-xl font-semibold text-gray-700">Air Humidity</h3>
+                <p id="humidity-value" class="text-4xl font-bold mt-3 text-gray-900">55%</p>
+                <p id="humidity-status" class="text-sm mt-2 font-medium text-green-600">Optimal</p>
+            </div>
+
+            <div id="ph-card" class="metric-card bg-white p-6 rounded-xl shadow-lg border-b-4 border-yellow-500 hover:shadow-xl transition duration-300">
+                <h3 class="text-xl font-semibold text-gray-700">Water pH Level</h3>
+                <p id="ph-value" class="text-4xl font-bold mt-3 text-gray-900">7.2</p>
+                <p id="ph-status" class="text-sm mt-2 font-medium text-green-600">Optimal</p>
+            </div>
+
+            <div id="tds-card" class="metric-card bg-white p-6 rounded-xl shadow-lg border-b-4 border-red-500 hover:shadow-xl transition duration-300">
+                <h3 class="text-xl font-semibold text-gray-700">TDS (Water Purity)</h3>
+                <p id="tds-value" class="text-4xl font-bold mt-3 text-gray-900">350 ppm</p>
+                <p id="tds-status" class="text-sm mt-2 font-medium text-yellow-600">Caution</p>
+            </div>
+
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Hygiene Alert Log</h2>
+            <div id="alert-log" class="space-y-3 max-h-80 overflow-y-auto">
+                <p class="text-gray-500 text-center p-4" id="log-placeholder">System is operational. No critical alerts recently.</p>
+            </div>
+        </div>
+
+        <div id="error-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center p-4 z-50">
+            <div class="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full">
+                <h3 id="modal-title" class="text-xl font-bold text-red-600 mb-3">Critical Error</h3>
+                <p id="modal-body" class="text-gray-700 mb-4">A critical threshold has been breached. Immediate action is required.</p>
+                <button onclick="document.getElementById('error-modal').classList.add('hidden')" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded-lg transition duration-300">Acknowledge</button>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+// ---- Thresholds ----
+const CRITICAL_LOW_TEMP = 18, CRITICAL_HIGH_TEMP = 28, OPTIMAL_LOW_TEMP = 20, OPTIMAL_HIGH_TEMP = 25;
+const CRITICAL_HIGH_HUMIDITY = 70, OPTIMAL_HIGH_HUMIDITY = 60;
+const CRITICAL_LOW_PH = 6.0, CRITICAL_HIGH_PH = 8.5, OPTIMAL_LOW_PH = 6.5, OPTIMAL_HIGH_PH = 7.5;
+const CRITICAL_HIGH_TDS = 500, OPTIMAL_HIGH_TDS = 300;
+const WEIGHTS = { temp: 25, humidity: 15, ph: 30, tds: 30 };
+
+let lastAlertTime = 0;
+const DEBOUNCE_TIME = 5000;
+
+function getRandomValue(min, max) { return Math.random() * (max - min) + min; }
+function getTimeString() { return new Date().toLocaleTimeString(); }
+
+function evaluateMetric(value, critLow, optLow, optHigh, critHigh) {
+    if (value >= optLow && value <= optHigh) return { status: "Optimal", color: "green", score: 100 };
+    if ((value > optHigh && value <= critHigh) || (value < optLow && value >= critLow)) return { status: "Caution", color: "yellow", score: 75 };
+    return { status: "Critical", color: "red", score: 30 };
+}
+
+function updateOverallStatus(score, status, color) {
+    const panel = document.getElementById("overall-status");
+    document.getElementById("status-message").textContent = status;
+    document.getElementById("ohi-score").textContent = score.toFixed(0) + "%";
+
+    panel.className = `p-6 sm:p-8 rounded-xl shadow-2xl mb-10 flex flex-col sm:flex-row justify-between items-center bg-${color}-700 text-white`;
+
+    const icon = document.getElementById("status-icon");
+    icon.className = `w-12 h-12 rounded-full flex items-center justify-center text-3xl bg-white text-${color}-700`;
+    icon.innerHTML = (color === "green") ? "✔" : (color === "yellow" ? "⚠" : "✖");
+}
+
+function logAlert(status, metricName, metricValue, color) {
+    const now = Date.now();
+    if (now - lastAlertTime < DEBOUNCE_TIME) return;
+    lastAlertTime = now;
+
+    document.getElementById("log-placeholder").classList.add("hidden");
+    const log = document.getElementById("alert-log");
+
+    const div = document.createElement("div");
+    div.className = `p-3 rounded-lg border-l-4 border-${color}-600 bg-${color}-100 text-${color}-800`;
+    div.textContent = `[${getTimeString()}] ${metricName} is ${status} (${metricValue})`;
+    log.prepend(div);
+
+    if (status === "Critical") {
+        document.getElementById("modal-body").textContent = `${metricName} reached a critical level (${metricValue}). Immediate action required!`;
+        document.getElementById("error-modal").classList.remove("hidden");
+    }
+}
+
+function updateMetricCard(idPrefix, value, status, color) {
+    document.getElementById(`${idPrefix}-value`).textContent = value;
+    const statusEl = document.getElementById(`${idPrefix}-status`);
+    statusEl.textContent = status;
+    statusEl.className = `text-sm mt-2 font-medium text-${color}-600`;
+}
+
+function updateDashboard() {
+    const temp = getRandomValue(16, 32);
+    const humidity = getRandomValue(40, 85);
+    const ph = getRandomValue(5.5, 9.5).toFixed(2);
+    const tds = getRandomValue(150, 650).toFixed(0);
+
+    const tEval = evaluateMetric(temp, CRITICAL_LOW_TEMP, OPTIMAL_LOW_TEMP, OPTIMAL_HIGH_TEMP, CRITICAL_HIGH_TEMP);
+    const hEval = evaluateMetric(humidity, 0, 0, OPTIMAL_HIGH_HUMIDITY, CRITICAL_HIGH_HUMIDITY);
+    const pEval = evaluateMetric(ph, CRITICAL_LOW_PH, OPTIMAL_LOW_PH, OPTIMAL_HIGH_PH, CRITICAL_HIGH_PH);
+    const tdsEval = evaluateMetric(tds, 0, 0, OPTIMAL_HIGH_TDS, CRITICAL_HIGH_TDS);
+
+    updateMetricCard("temp", temp.toFixed(1) + "°C", tEval.status, tEval.color);
+    updateMetricCard("humidity", humidity.toFixed(0) + "%", hEval.status, hEval.color);
+    updateMetricCard("ph", ph, pEval.status, pEval.color);
+    updateMetricCard("tds", tds + " ppm", tdsEval.status, tdsEval.color);
+
+    const overallScore = (
+        tEval.score * WEIGHTS.temp +
+        hEval.score * WEIGHTS.humidity +
+        pEval.score * WEIGHTS.ph +
+        tdsEval.score * WEIGHTS.tds
+    ) / 100;
+
+    const finalStatus = overallScore >= 85 ? "Excellent Hygiene" :
+                        overallScore >= 60 ? "Moderate Hygiene" : "Poor Hygiene";
+
+    const finalColor = overallScore >= 85 ? "green" :
+                       overallScore >= 60 ? "yellow" : "red";
+
+    updateOverallStatus(overallScore, finalStatus, finalColor);
+
+    [ ["Temperature", temp, tEval], ["Humidity", humidity, hEval], ["Water pH", ph, pEval], ["TDS", tds, tdsEval] ]
+        .forEach(([name, val, ev]) => { if (ev.status !== "Optimal") logAlert(ev.status, name, val, ev.color); });
+}
+
+setInterval(updateDashboard, 4000);
+</script>
+
+</body>
+</html>
